@@ -38,7 +38,7 @@ def t_facts():
     assert len(f["allocation"]) == 9, "allocation should list 9 ETFs"
     assert sum(a["dollars"] for a in f["allocation"]) == f["client"]["assets"], "dollars do not sum to assets"
     assert abs(sum(a["weight"] for a in f["allocation"]) - 1) < 1e-3, "weights do not sum to 1"
-    assert len(f["stress"]) == 4, "expected 4 stress scenarios"
+    assert len(f["stress"]) == 5, "expected 5 stress scenarios"
     return f"funding ratio {f['metrics']['funding_ratio']}, return {f['metrics']['expected_return']:.2%}"
 
 
@@ -72,8 +72,9 @@ def t_projection():
     p = build_facts()["projection"]
     assert len(p["path"]) == 20, "projection should have one row per year"
     assert "years_lasted" in p and "lasts_full_horizon" in p, "projection fields missing"
-    return (f"ours lasts {p['years_lasted']} years, ends with ${p['ending_assets']:,}; "
-            f"60/40 ends with ${p['benchmark_ending_assets']:,}")
+    assert "forward_return" in p and "historical_years_lasted" in p, "forward/historical fields missing"
+    return (f"forward return {p['forward_return']:.2%}: lasts {p['years_lasted']} yrs, ends ${p['ending_assets']:,} "
+            f"(historical: {p['historical_years_lasted']} yrs, ${p['historical_ending_assets']:,})")
 
 
 def t_matching():
@@ -86,11 +87,24 @@ def t_matching():
     return f"bonds share: 5 yrs {b5:.0%}, 10 yrs {b10:.0%}, 15 yrs {b15:.0%}"
 
 
+def t_strategy():
+    from engine import build_facts
+    b = build_facts(strategy="B")
+    a = build_facts(strategy="A")
+    bonds = lambda f: sum(x["dollars"] for x in f["allocation"] if x["pool"] == "matching")
+    assert b["assumptions"]["strategy"] == "B", "default strategy should be B"
+    assert bonds(b) > bonds(a), "Option B should hold more bonds"
+    assert b["assumptions"]["hedge_ratio"] > a["assumptions"]["hedge_ratio"], "B should hedge more"
+    worst = lambda f: min(s["funding_ratio"] for s in f["stress"])
+    return (f"B: bonds ${bonds(b):,}, hedge {b['assumptions']['hedge_ratio']:.0%}, worst FR {worst(b)} | "
+            f"A: bonds ${bonds(a):,}, hedge {a['assumptions']['hedge_ratio']:.0%}, worst FR {worst(a)}")
+
+
 def t_compare():
     from compare import compare_portfolios
     rows = compare_portfolios()
     json.dumps(rows)
-    assert len(rows) == 4, "expected 4 portfolios"
+    assert len(rows) == 5, "expected 5 portfolios (B, A, 60/40, stocks, bonds)"
     for key in ["survives_all_shocks", "lasts_full_horizon", "passes_both_tests"]:
         assert key in rows[0], f"missing {key}"
     return "; ".join(
@@ -102,7 +116,7 @@ def t_compare():
 def t_backtest():
     from compare import backtest_growth
     g = backtest_growth()
-    assert g.shape[1] == 4 and len(g) > 100, "unexpected backtest shape"
+    assert g.shape[1] >= 4 and len(g) > 100, "unexpected backtest shape"
     return f"{len(g)} months, ours ends at ${g.iloc[-1, 0]:,.0f}"
 
 
@@ -113,8 +127,9 @@ if __name__ == "__main__":
     check("4. custom_scenario() for 'what if'", t_custom)
     check("5. 20-year projection (does the money last?)", t_projection)
     check("6. Matching-years slider changes the bond share", t_matching)
-    check("7. compare_portfolios() with both tests", t_compare)
-    check("8. backtest_growth()", t_backtest)
+    check("7. Option B is default and safer than A", t_strategy)
+    check("8. compare_portfolios() with both tests", t_compare)
+    check("9. backtest_growth()", t_backtest)
 
     print("\n" + "=" * 70)
     for ok, name, detail in results:

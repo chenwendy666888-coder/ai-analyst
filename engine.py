@@ -42,6 +42,19 @@ TIP_MIN_WEIGHT = 0.40      # TIP >= 40% of the matching pool
 GROWTH_MAX_WEIGHT = 0.40   # each growth ETF <= 40% of the growth pool
 BENCHMARK = {"VTI": 0.60, "BND": 0.40}
 
+# Strategy B (default): hedge ALL promises with bonds, invest only the surplus for growth.
+# Strategy A: lock in the first MATCHING_YEARS of payments, invest the rest for growth.
+DEFAULT_STRATEGY = "B"
+# Strategy B matching pool: fixed weights tilted to medium/long bonds so that the bond
+# duration is close to the liability duration (TIP >= 40% because pensions rise with inflation).
+B_MATCHING_WEIGHTS = {"TIP": 0.40, "IEF": 0.50, "SHY": 0.00, "BND": 0.10}
+# Forward-looking expected returns for the long-term projection (building-block approach):
+#   bonds earn today's 10-year Treasury yield, SHY earns today's T-bill yield,
+#   equities and REITs earn the 10-year yield + an equity risk premium, gold keeps pace with inflation.
+EQUITY_RISK_PREMIUM = 0.03  # ASSUMPTION
+# Approximate durations in years (ASSUMPTION; used for the hedge ratio and stress tests)
+DURATIONS = {"SHY": 1.9, "IEF": 7.5, "BND": 6.0, "TIP": 6.5}
+
 
 # ------------------------------------------------------------------ market inputs
 def latest_value(macro, column):
@@ -114,6 +127,20 @@ def pv_liabilities(annual_payment, years, inflation, rate):
     return float(liability_schedule(annual_payment, years, inflation, rate)["pv"].sum())
 
 
+def liability_duration(annual_payment, years, inflation, rate):
+    """Modified duration of the promised payments (years)."""
+    sch = liability_schedule(annual_payment, years, inflation, rate)
+    pv = sch["pv"].sum()
+    return float((sch["year"] * sch["pv"]).sum() / pv / (1 + rate))
+
+
+def resolve_matching_years(strategy, matching_years, years):
+    """Strategy B hedges every year of promises unless told otherwise; A locks in 10 years."""
+    if matching_years is not None:
+        return int(matching_years)
+    return int(years) if strategy == "B" else MATCHING_YEARS
+
+
 # ------------------------------------------------------------------ allocation
 def inverse_vol_weights(vols, floors=None, cap=None):
     """
@@ -142,7 +169,8 @@ def inverse_vol_weights(vols, floors=None, cap=None):
     return pd.concat([pd.Series(fixed, dtype=float), w]).reindex(vols.index)
 
 
-def allocate(assets, annual_payment, years, etf_stats, inputs, matching_years=MATCHING_YEARS):
+def allocate(assets, annual_payment, years, etf_stats, inputs, matching_years=MATCHING_YEARS,
+             strategy=DEFAULT_STRATEGY):
     """
     Matching pool = PV of the first 10 years of payments (capped at assets),
                     in TIP/IEF/SHY/BND, inverse-vol weighted, TIP >= 40%.
@@ -156,8 +184,12 @@ def allocate(assets, annual_payment, years, etf_stats, inputs, matching_years=MA
     growth_amount = float(assets) - matching_amount
 
     vols = etf_stats["volatility"]
+    if strategy == "B":
+        matching_w = pd.Series(B_MATCHING_WEIGHTS, dtype=float).reindex(MATCHING_ETFS).fillna(0.0)
+    else:
+        matching_w = inverse_vol_weights(vols[MATCHING_ETFS], floors={"TIP": TIP_MIN_WEIGHT})
     pools = [
-        ("matching", matching_amount, inverse_vol_weights(vols[MATCHING_ETFS], floors={"TIP": TIP_MIN_WEIGHT})),
+        ("matching", matching_amount, matching_w),
         ("growth", growth_amount, inverse_vol_weights(vols[GROWTH_ETFS], cap=GROWTH_MAX_WEIGHT)),
     ]
     rows = []
@@ -165,6 +197,24 @@ def allocate(assets, annual_payment, years, etf_stats, inputs, matching_years=MA
         for ticker, wt in w.items():
             rows.append({"ticker": ticker, "pool": pool, "weight": amount * wt / assets, "dollars": amount * wt})
     return pd.DataFrame(rows)
+
+
+# ------------------------------------------------------------------ forward-looking returns
+def forward_returns(inputs):
+    """Expected annual return per ETF from today's market rates (an assumption, not a forecast)."""
+    y, rf, infl = inputs["discount_rate"], inputs["risk_free"], inputs["inflation"]
+    out = {t: y for t in ("TIP", "IEF", "BND")}
+    out["SHY"] = rf
+    out.update({t: y + EQUITY_RISK_PREMIUM for t in ("VTI", "VEA", "VWO", "VNQ")})
+    out["GLD"] = infl
+    return out
+
+
+def forward_portfolio_return(weights, inputs):
+    """Weighted forward-looking return of a portfolio. weights: Series indexed by ticker."""
+    fr = forward_returns(inputs)
+    w = pd.Series(weights, dtype=float)
+    return float(sum(w[t] * fr.get(t, 0.0) for t in w.index) / w.sum())
 
 
 # ------------------------------------------------------------------ long-term projection
@@ -187,14 +237,17 @@ def project_assets(assets, annual_payment, years, inflation, annual_return):
 
 
 # ------------------------------------------------------------------ full analysis
-def analyze(assets=100000, annual_payment=5000, years=20, matching_years=MATCHING_YEARS):
+def analyze(assets=100000, annual_payment=5000, years=20, matching_years=None,
+            strategy=DEFAULT_STRATEGY):
     """Run the full analysis. Returns a dict of intermediate results (also used by stress.py)."""
     prices, macro = load_data()
     inputs = market_inputs(prices, macro)
     etf_stats = stats(prices, inputs["risk_free"])
 
     pv = pv_liabilities(annual_payment, years, inputs["inflation"], inputs["discount_rate"])
-    allocation = allocate(assets, annual_payment, years, etf_stats, inputs, matching_years)
+    strategy = str(strategy).upper()
+    matching_years = resolve_matching_years(strategy, matching_years, years)
+    allocation = allocate(assets, annual_payment, years, etf_stats, inputs, matching_years, strategy)
     weights = allocation.set_index("ticker")["weight"]
 
     metrics = portfolio_metrics(weights, prices, inputs["risk_free"])
@@ -202,21 +255,36 @@ def analyze(assets=100000, annual_payment=5000, years=20, matching_years=MATCHIN
     benchmark = portfolio_metrics(pd.Series(BENCHMARK), prices, inputs["risk_free"])
     benchmark["funding_ratio"] = assets / pv
 
-    path, lasted, ending = project_assets(
+    fwd = forward_portfolio_return(weights, inputs)
+    bench_fwd = forward_portfolio_return(pd.Series(BENCHMARK), inputs)
+    # Main projection: forward-looking returns from today's rates
+    path, lasted, ending = project_assets(assets, annual_payment, years, inputs["inflation"], fwd)
+    bench_path, bench_lasted, bench_ending = project_assets(
+        assets, annual_payment, years, inputs["inflation"], bench_fwd
+    )
+    # Reference only: the same projection at the last decade's historical returns
+    _, hist_lasted, hist_ending = project_assets(
         assets, annual_payment, years, inputs["inflation"], metrics["expected_return"]
     )
-    bench_path, bench_lasted, bench_ending = project_assets(
-        assets, annual_payment, years, inputs["inflation"], benchmark["expected_return"]
-    )
+
+    liab_dur = liability_duration(annual_payment, years, inputs["inflation"], inputs["discount_rate"])
+    bond_dollar_dur = sum(float(r["dollars"]) * DURATIONS.get(r["ticker"], 0.0)
+                          for _, r in allocation.iterrows())
+    hedge_ratio = bond_dollar_dur / (pv * liab_dur) if pv * liab_dur > 0 else 0.0
 
     return {
         "assets": assets,
         "annual_payment": annual_payment,
         "years": years,
+        "strategy": strategy,
         "matching_years": matching_years,
-        "projection": {"path": path, "years_lasted": lasted, "ending_assets": ending},
+        "liability_duration": liab_dur,
+        "hedge_ratio": hedge_ratio,
+        "projection": {"path": path, "years_lasted": lasted, "ending_assets": ending,
+                       "forward_return": fwd, "historical_years_lasted": hist_lasted,
+                       "historical_ending_assets": hist_ending},
         "benchmark_projection": {"path": bench_path, "years_lasted": bench_lasted,
-                                 "ending_assets": bench_ending},
+                                 "ending_assets": bench_ending, "forward_return": bench_fwd},
         "inputs": inputs,
         "etf_stats": etf_stats,
         "liability_pv": pv,
@@ -241,12 +309,13 @@ def _whole_dollars(values, total):
     return rounded
 
 
-def build_facts(assets=100000, annual_payment=5000, years=20, matching_years=MATCHING_YEARS):
+def build_facts(assets=100000, annual_payment=5000, years=20, matching_years=None,
+                strategy=DEFAULT_STRATEGY):
     """
     Final output for the app / LLM. Plain Python types only (JSON-safe).
     Money is in whole dollars; ratios are decimals rounded to 4 places (0.05 = 5%).
     """
-    res = analyze(assets, annual_payment, years, matching_years)
+    res = analyze(assets, annual_payment, years, matching_years, strategy)
     keys = ["expected_return", "volatility", "max_drawdown", "sharpe", "funding_ratio"]
 
     alloc = res["allocation"]
@@ -282,9 +351,14 @@ def build_facts(assets=100000, annual_payment=5000, years=20, matching_years=MAT
             for s in stress_rows
         ],
         "projection": {
+            "method": "forward-looking returns from today's rates (assumption)",
+            "forward_return": _ratio(res["projection"]["forward_return"]),
             "years_lasted": int(res["projection"]["years_lasted"]),
             "lasts_full_horizon": res["projection"]["years_lasted"] >= years,
             "ending_assets": int(round(res["projection"]["ending_assets"])),
+            "historical_years_lasted": int(res["projection"]["historical_years_lasted"]),
+            "historical_ending_assets": int(round(res["projection"]["historical_ending_assets"])),
+            "benchmark_forward_return": _ratio(res["benchmark_projection"]["forward_return"]),
             "benchmark_years_lasted": int(res["benchmark_projection"]["years_lasted"]),
             "benchmark_ending_assets": int(round(res["benchmark_projection"]["ending_assets"])),
             "path": [
@@ -294,11 +368,17 @@ def build_facts(assets=100000, annual_payment=5000, years=20, matching_years=MAT
             ],
         },
         "assumptions": {
-            "matching_years": int(matching_years),
+            "strategy": res["strategy"],
+            "strategy_name": ("Hedge the promises, grow the surplus" if res["strategy"] == "B"
+                              else "Lock in the first years, grow the rest"),
+            "hedge_ratio": _ratio(res["hedge_ratio"]),
+            "liability_duration": round(res["liability_duration"], 2),
+            "matching_years": int(res["matching_years"]),
             "pv_liabilities": int(round(res["liability_pv"])),
             "discount_rate": _ratio(res["inputs"]["discount_rate"]),
             "inflation": _ratio(res["inputs"]["inflation"]),
             "risk_free": _ratio(res["inputs"]["risk_free"]),
+            "equity_risk_premium": EQUITY_RISK_PREMIUM,
             "data_end_date": res["inputs"]["data_end_date"],
         },
     }

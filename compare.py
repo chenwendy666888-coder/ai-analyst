@@ -16,15 +16,18 @@ What it answers for the judges:
 
 Two tests for every portfolio:
   1. Short-term shock: funding ratio in each stress scenario (>= 1.0 = can pay)
-  2. Long-term: grow at the portfolio's historical return, pay every year -> does it last?
+  2. Long-term: grow at forward-looking returns from today's rates, pay every year -> does it last?
+     (the same projection at the last decade's historical returns is kept for reference)
 """
 import pandas as pd
 
 from data import load_data
-from engine import analyze, portfolio_metrics, project_assets, MATCHING_YEARS
+from engine import (analyze, portfolio_metrics, project_assets, forward_portfolio_return,
+                    DEFAULT_STRATEGY)
 from stress import SCENARIOS, apply_shock
 
-OURS = "Our portfolio (LDI)"
+OURS = "Our portfolio (Option B)"
+OPTION_A = "Option A (lock 10 years)"
 ALTERNATIVES = {
     "60/40 stocks/bonds": {"VTI": 0.60, "BND": 0.40},
     "All stocks": {"VTI": 1.00},
@@ -44,18 +47,22 @@ def _allocation_frame(weights, assets):
     )
 
 
-def compare_portfolios(assets=100000, annual_payment=5000, years=20, matching_years=MATCHING_YEARS):
+def compare_portfolios(assets=100000, annual_payment=5000, years=20, matching_years=None,
+                       strategy=DEFAULT_STRATEGY):
     """
     Metrics and stress results for our portfolio and each alternative.
     Returns a list of plain-Python dicts (JSON-safe), ours first.
     """
-    res = analyze(assets, annual_payment, years, matching_years)
+    res = analyze(assets, annual_payment, years, matching_years, strategy)
     prices, _ = load_data()
     rf = res["inputs"]["risk_free"]
     inflation = res["inputs"]["inflation"]
+    res_a = analyze(assets, annual_payment, years, None, "A")
     base_funding = assets / res["liability_pv"]
 
     portfolios = {OURS: _weights_of_ours(res)}
+    if str(strategy).upper() == "B" and matching_years is None:
+        portfolios[OPTION_A] = _weights_of_ours(res_a)
     portfolios.update({name: pd.Series(w, dtype=float) for name, w in ALTERNATIVES.items()})
 
     rows = []
@@ -64,8 +71,10 @@ def compare_portfolios(assets=100000, annual_payment=5000, years=20, matching_ye
         variant = dict(res, allocation=_allocation_frame(weights, assets))
         stress = [apply_shock(variant, scen, **shocks) for scen, shocks in SCENARIOS]
         passed = sum(bool(s["obligations_met"]) for s in stress)
-        _, lasted, ending = project_assets(assets, annual_payment, years, inflation,
-                                           metrics["expected_return"])
+        fwd = forward_portfolio_return(weights, res["inputs"])
+        _, lasted, ending = project_assets(assets, annual_payment, years, inflation, fwd)
+        _, h_lasted, h_ending = project_assets(assets, annual_payment, years, inflation,
+                                               metrics["expected_return"])
         survives_shocks = passed == len(stress)
         lasts = lasted >= years
         rows.append({
@@ -78,10 +87,13 @@ def compare_portfolios(assets=100000, annual_payment=5000, years=20, matching_ye
             "worst_funding_ratio": round(min(s["funding_ratio"] for s in stress), 4),
             "scenarios_passed": f"{passed} of {len(stress)}",
             "survives_all_shocks": survives_shocks,
+            "forward_return": round(fwd, 4),
             "years_lasted": int(lasted),
             "lasts_full_horizon": lasts,
             "ending_assets": int(round(ending)),
             "passes_both_tests": survives_shocks and lasts,
+            "historical_years_lasted": int(h_lasted),
+            "historical_ending_assets": int(round(h_ending)),
             "stress": [
                 {
                     "scenario": s["scenario"],
@@ -96,15 +108,17 @@ def compare_portfolios(assets=100000, annual_payment=5000, years=20, matching_ye
 
 
 def backtest_growth(assets=100000, annual_payment=5000, years=20, monthly=True,
-                    matching_years=MATCHING_YEARS):
+                    matching_years=None, strategy=DEFAULT_STRATEGY):
     """
     Growth of `assets` over the data history for each portfolio, rebalanced daily
     to fixed weights. Payments are NOT deducted: this shows investment performance only.
     Returns a DataFrame (index = date, one column per portfolio), month-end by default.
     """
-    res = analyze(assets, annual_payment, years, matching_years)
+    res = analyze(assets, annual_payment, years, matching_years, strategy)
     prices, _ = load_data()
     portfolios = {OURS: _weights_of_ours(res)}
+    if str(strategy).upper() == "B" and matching_years is None:
+        portfolios[OPTION_A] = _weights_of_ours(analyze(assets, annual_payment, years, None, "A"))
     portfolios.update({name: pd.Series(w, dtype=float) for name, w in ALTERNATIVES.items()})
 
     growth = {}
@@ -118,7 +132,7 @@ def backtest_growth(assets=100000, annual_payment=5000, years=20, monthly=True,
     return out.round(0)
 
 
-SHORT = {OURS: "Ours", "60/40 stocks/bonds": "60/40", "All stocks": "Stocks", "All bonds": "Bonds"}
+SHORT = {OURS: "B", OPTION_A: "A", "60/40 stocks/bonds": "60/40", "All stocks": "Stocks", "All bonds": "Bonds"}
 
 
 def _print_table(rows, annual_payment, years=20):
@@ -139,26 +153,41 @@ def _print_table(rows, annual_payment, years=20):
             for r in rows
         )
         print(f"  {scen[:32]:<32} {cells}")
-    print("\nMoney left after the full horizon (growing at each portfolio's historical return):")
+    print("\nMoney left after the full horizon:")
+    h1, h2, h3, h4 = "Portfolio", "Fwd return", "At today's rates", "At last decade's returns"
+    print(f"  {h1:<26}{h2:>11}  {h3:<22}{h4}")
     for r in rows:
-        status = f"${r['ending_assets']:,}" if r["lasts_full_horizon"] else f"runs out after {r['years_lasted']} years"
-        print(f"  {r['portfolio']:<22} {status}")
-    print("  (Shocks = stress scenarios passed; Lasts = money lasts the full horizon; Both = passes both tests)")
+        fwd = f"${r['ending_assets']:,}" if r["lasts_full_horizon"] else f"runs out after {r['years_lasted']} yrs"
+        hist = (f"${r['historical_ending_assets']:,}" if r["historical_years_lasted"] >= years
+                else f"runs out after {r['historical_years_lasted']} yrs")
+        print(f"  {r['portfolio']:<26}{r['forward_return']:>11.2%}  {fwd:<22}{hist}")
+    print("  (Shocks = stress scenarios passed; Lasts = money lasts at today's rates; Both = passes both tests)")
+    print("  (Today's rates: bonds earn the 10-year yield, stocks the yield + 3% premium, gold = inflation)")
 
 
 def _matching_years_table(annual_payment=5000):
-    print(f"\n=== Effect of the matching-pool length (annual payment ${annual_payment:,}) ===")
+    print(f"\n=== Option A: effect of the matching-pool length (annual payment ${annual_payment:,}) ===")
     print(f"{'Matching years':<16}{'Bonds %':>9}{'Return':>9}{'MaxDD':>9}{'Worst FR':>10}{'Lasts':>10}")
     for m in (5, 10, 15, 20):
-        r = compare_portfolios(annual_payment=annual_payment, matching_years=m)[0]
-        res = analyze(annual_payment=annual_payment, matching_years=m)
+        r = compare_portfolios(annual_payment=annual_payment, matching_years=m, strategy="A")[0]
+        res = analyze(annual_payment=annual_payment, matching_years=m, strategy="A")
         bonds = res["allocation"].loc[res["allocation"]["pool"] == "matching", "weight"].sum()
         lasts = "yes" if r["lasts_full_horizon"] else f"{r['years_lasted']} yrs"
         print(f"{m:<16}{bonds:>9.0%}{r['expected_return']:>9.2%}{r['max_drawdown']:>9.2%}"
               f"{r['worst_funding_ratio']:>10.2f}{lasts:>10}")
 
 
+def _print_hedge(annual_payment=5000):
+    for strat in ("B", "A"):
+        res = analyze(annual_payment=annual_payment, strategy=strat)
+        bonds = res["allocation"].loc[res["allocation"]["pool"] == "matching", "dollars"].sum()
+        print(f"  Option {strat}: bonds ${bonds:,.0f}  hedge ratio {res['hedge_ratio']:.0%}  "
+              f"liability duration {res['liability_duration']:.1f} yrs")
+
+
 if __name__ == "__main__":
+    print("=== Interest-rate hedge ===")
+    _print_hedge(5000)
     for payment in (5000, 6000):
         _print_table(compare_portfolios(annual_payment=payment), payment)
     _matching_years_table(5000)

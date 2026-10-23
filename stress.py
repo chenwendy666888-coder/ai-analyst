@@ -21,18 +21,18 @@ How a shock works (simple, explainable rules):
 
 All shock sizes and durations are stated ASSUMPTIONS, not forecasts.
 """
-from engine import analyze, pv_liabilities, MATCHING_YEARS
+from engine import analyze, pv_liabilities, DURATIONS, DEFAULT_STRATEGY
 
 EQUITY_ETFS = ["VTI", "VEA", "VWO", "VNQ"]
 
-# Approximate durations in years (assumption; check the ETF fact sheets if needed)
-DURATIONS = {"SHY": 1.9, "IEF": 7.5, "BND": 6.0, "TIP": 6.5}
+# DURATIONS (approximate, an assumption) now live in engine.py so the hedge ratio uses the same numbers
 
 INFLATION_YEARS = 3
 
 SCENARIOS = [
     ("Equity crash -30%", {"equity_shock": -0.30}),
     ("Interest rates +2 points", {"rate_shock": 0.02}),
+    ("Interest rates -2 points", {"rate_shock": -0.02}),
     ("Inflation +3 points for 3 years", {"inflation_shock": 0.03}),
     ("2022-style shock (stocks -20%, rates +2, inflation +3)",
      {"equity_shock": -0.20, "rate_shock": 0.02, "inflation_shock": 0.03}),
@@ -93,7 +93,7 @@ def run_stress(res):
 
 def custom_scenario(equity_shock=0.0, rate_shock=0.0, inflation_shock=0.0,
                     assets=100000, annual_payment=5000, years=20, name="Custom scenario",
-                    matching_years=MATCHING_YEARS):
+                    matching_years=None, strategy=DEFAULT_STRATEGY):
     """
     One "what if" scenario, ready for the app or the LLM (plain Python types).
     Shocks are decimals: -0.30 = fall 30%, 0.02 = +2 percentage points.
@@ -104,7 +104,7 @@ def custom_scenario(equity_shock=0.0, rate_shock=0.0, inflation_shock=0.0,
         if not low <= value <= high:
             raise ValueError(f"{label}={value} is outside the allowed range [{low}, {high}]")
 
-    res = analyze(assets, annual_payment, years, matching_years)
+    res = analyze(assets, annual_payment, years, matching_years, strategy)
     s = apply_shock(res, name, equity_shock, rate_shock, inflation_shock)
     base_value = float(res["allocation"]["dollars"].sum())
     base_fr = float(res["metrics"]["funding_ratio"])
