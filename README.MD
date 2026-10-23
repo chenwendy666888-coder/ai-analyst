@@ -1,80 +1,80 @@
-# Example Project
+# Pension AI Analyst
 
-Minimal Python samples that call the OpenAI Portal using the `openai` SDK:
+A Streamlit hackathon app for analysing a Defined Benefit pension fund, combining quantitative portfolio analysis with Azure OpenAI explanations.
 
-- [main.py](main.py) — chat completions example (`gpt-6.1-sol`)
-- [embeddings.py](embeddings.py) — text embeddings example (`text-embedding-3-large`)
+## Features
 
-## Quickstart
+- Matching/growth ETF allocation with interactive charts.
+- Return, volatility, drawdown and funding-ratio comparisons.
+- AI investment committee discussion.
+- Stress scenarios with funding-ratio visualisations.
+- Trustee Q&A grounded in calculated facts.
+- Cached analytics and AI responses.
 
-### Prerequisites
-
-- Python 3.9 or later
-
-### 1. Clone the repository
-
-```bash
-git clone <your-repo-url>
-cd example-hackathon-python
-```
-
-### 2. Create and activate a virtual environment
-
-On Windows (PowerShell):
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-```
-
-On macOS/Linux:
+## Setup
 
 ```bash
+git clone [https://github.com/chenwendy666888-coder/ai-analyst.git](https://github.com/chenwendy666888-coder/ai-analyst.git)
+cd ai-analyst
 python -m venv .venv
 source .venv/bin/activate
-```
-
-### 3. Install dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure credentials
+Windows activation:
 
-Open [main.py](main.py) and update the following values with your own:
-
-- `api_key` — your API Key
-- `model_name` — the name of the model
-
-> **Tip:** For real projects, load these values from environment variables (e.g. via `os.environ` or `python-dotenv`) instead of hard-coding them.
-
-### 5. Run the samples
-
-Run the chat completion example:
-
-```bash
-python main.py
+```powershell
+.\.venv\Scripts\Activate.ps1
 ```
 
-You should see the assistant's response printed to the terminal.
+Create `.env` in the project root:
 
-Run the embeddings example:
-
-```bash
-python embeddings.py
+```env
+HACK_API_KEY=your_key
+HACK_ENDPOINT=[https://your-resource.openai.azure.com/](https://your-resource.openai.azure.com/)
+USE_FAKE_FACTS=0
 ```
 
-This sends three short phrases to the `text-embedding-3-large` deployment and prints:
+Never commit `.env`. Azure deployment settings are configured in `llm.py`.
 
-- the full JSON response from the embeddings API
-- a one-line summary per input showing the embedding vector length and the first/last two values
-- token usage information
+## Run
 
-Update `api_key`, and `model_name` your team's credentials in the portal.
+```bash
+streamlit run app.py
+```
 
-## Troubleshooting
+Enter assets, annual payment and years, then click Run analysis.
 
-- **`AuthenticationError`** — verify your `subscription_key` and `endpoint` are correct.
-- **`DeploymentNotFound`** — make sure the `deployment` name matches what model you want to use in the portal.
-- **SSL or network errors** — check that your machine can reach the endpoint and it is not being blocked by any VPN or proxies.
+If market-data files are missing:
+
+```bash
+python data.py
+```
+
+Set `USE_FAKE_FACTS=1` and restart for fixed demo data. Uncached AI responses still require Azure access.
+
+## Project Structure
+
+| File | Purpose |
+|---|---|
+| `app.py` | Dashboard |
+| `engine.py` | Allocation, liabilities, metrics and projections |
+| `stress.py` | Standard and custom stress calculations |
+| `compare.py` | Portfolio comparisons |
+| `llm.py` / `prompts.py` | AI integration and response caching |
+| `data.py` | Market-data loading |
+| `ENGINE_API.md` | Engine documentation |
+
+## Testing
+
+```bash
+python test_all.py
+```
+
+Check the printed results; test Azure and dashboard features separately.
+
+## Limitations
+
+Uses historical returns and simplified assumptions—not forecasts. AI output may contain errors, and funding ratios do not guarantee future payments.
+
+Educational hackathon project. Not financial advice.
