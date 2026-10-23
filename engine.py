@@ -142,7 +142,7 @@ def inverse_vol_weights(vols, floors=None, cap=None):
     return pd.concat([pd.Series(fixed, dtype=float), w]).reindex(vols.index)
 
 
-def allocate(assets, annual_payment, years, etf_stats, inputs):
+def allocate(assets, annual_payment, years, etf_stats, inputs, matching_years=MATCHING_YEARS):
     """
     Matching pool = PV of the first 10 years of payments (capped at assets),
                     in TIP/IEF/SHY/BND, inverse-vol weighted, TIP >= 40%.
@@ -151,7 +151,7 @@ def allocate(assets, annual_payment, years, etf_stats, inputs):
     Returns a DataFrame: ticker, pool, weight (of total assets), dollars.
     """
     schedule = liability_schedule(annual_payment, years, inputs["inflation"], inputs["discount_rate"])
-    matching_amount = float(schedule.loc[schedule["year"] <= MATCHING_YEARS, "pv"].sum())
+    matching_amount = float(schedule.loc[schedule["year"] <= matching_years, "pv"].sum())
     matching_amount = min(matching_amount, float(assets))
     growth_amount = float(assets) - matching_amount
 
@@ -167,15 +167,34 @@ def allocate(assets, annual_payment, years, etf_stats, inputs):
     return pd.DataFrame(rows)
 
 
+# ------------------------------------------------------------------ long-term projection
+def project_assets(assets, annual_payment, years, inflation, annual_return):
+    """
+    Does the money last? Assets grow at `annual_return` each year, then the year's
+    payment (rising with inflation) is paid at year end. Deterministic, using the
+    portfolio's historical return as the expected return (an assumption).
+    Returns (path, years_lasted, ending_assets). years_lasted == years means it lasted.
+    """
+    path, a, payment, lasted = [], float(assets), float(annual_payment), years
+    for t in range(1, years + 1):
+        if t > 1:
+            payment *= 1 + inflation
+        a = a * (1 + annual_return) - payment
+        path.append({"year": t, "payment": payment, "assets_end": max(a, 0.0)})
+        if a < 0 and lasted == years:
+            lasted = t - 1
+    return path, lasted, max(a, 0.0)
+
+
 # ------------------------------------------------------------------ full analysis
-def analyze(assets=100000, annual_payment=5000, years=20):
+def analyze(assets=100000, annual_payment=5000, years=20, matching_years=MATCHING_YEARS):
     """Run the full analysis. Returns a dict of intermediate results (also used by stress.py)."""
     prices, macro = load_data()
     inputs = market_inputs(prices, macro)
     etf_stats = stats(prices, inputs["risk_free"])
 
     pv = pv_liabilities(annual_payment, years, inputs["inflation"], inputs["discount_rate"])
-    allocation = allocate(assets, annual_payment, years, etf_stats, inputs)
+    allocation = allocate(assets, annual_payment, years, etf_stats, inputs, matching_years)
     weights = allocation.set_index("ticker")["weight"]
 
     metrics = portfolio_metrics(weights, prices, inputs["risk_free"])
@@ -183,10 +202,21 @@ def analyze(assets=100000, annual_payment=5000, years=20):
     benchmark = portfolio_metrics(pd.Series(BENCHMARK), prices, inputs["risk_free"])
     benchmark["funding_ratio"] = assets / pv
 
+    path, lasted, ending = project_assets(
+        assets, annual_payment, years, inputs["inflation"], metrics["expected_return"]
+    )
+    bench_path, bench_lasted, bench_ending = project_assets(
+        assets, annual_payment, years, inputs["inflation"], benchmark["expected_return"]
+    )
+
     return {
         "assets": assets,
         "annual_payment": annual_payment,
         "years": years,
+        "matching_years": matching_years,
+        "projection": {"path": path, "years_lasted": lasted, "ending_assets": ending},
+        "benchmark_projection": {"path": bench_path, "years_lasted": bench_lasted,
+                                 "ending_assets": bench_ending},
         "inputs": inputs,
         "etf_stats": etf_stats,
         "liability_pv": pv,
@@ -211,12 +241,12 @@ def _whole_dollars(values, total):
     return rounded
 
 
-def build_facts(assets=100000, annual_payment=5000, years=20):
+def build_facts(assets=100000, annual_payment=5000, years=20, matching_years=MATCHING_YEARS):
     """
     Final output for the app / LLM. Plain Python types only (JSON-safe).
     Money is in whole dollars; ratios are decimals rounded to 4 places (0.05 = 5%).
     """
-    res = analyze(assets, annual_payment, years)
+    res = analyze(assets, annual_payment, years, matching_years)
     keys = ["expected_return", "volatility", "max_drawdown", "sharpe", "funding_ratio"]
 
     alloc = res["allocation"]
@@ -251,7 +281,21 @@ def build_facts(assets=100000, annual_payment=5000, years=20):
             }
             for s in stress_rows
         ],
+        "projection": {
+            "years_lasted": int(res["projection"]["years_lasted"]),
+            "lasts_full_horizon": res["projection"]["years_lasted"] >= years,
+            "ending_assets": int(round(res["projection"]["ending_assets"])),
+            "benchmark_years_lasted": int(res["benchmark_projection"]["years_lasted"]),
+            "benchmark_ending_assets": int(round(res["benchmark_projection"]["ending_assets"])),
+            "path": [
+                {"year": p["year"], "payment": int(round(p["payment"])),
+                 "assets_end": int(round(p["assets_end"]))}
+                for p in res["projection"]["path"]
+            ],
+        },
         "assumptions": {
+            "matching_years": int(matching_years),
+            "pv_liabilities": int(round(res["liability_pv"])),
             "discount_rate": _ratio(res["inputs"]["discount_rate"]),
             "inflation": _ratio(res["inputs"]["inflation"]),
             "risk_free": _ratio(res["inputs"]["risk_free"]),

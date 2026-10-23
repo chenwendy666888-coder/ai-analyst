@@ -21,7 +21,7 @@ How a shock works (simple, explainable rules):
 
 All shock sizes and durations are stated ASSUMPTIONS, not forecasts.
 """
-from engine import analyze, pv_liabilities
+from engine import analyze, pv_liabilities, MATCHING_YEARS
 
 EQUITY_ETFS = ["VTI", "VEA", "VWO", "VNQ"]
 
@@ -92,7 +92,8 @@ def run_stress(res):
 
 
 def custom_scenario(equity_shock=0.0, rate_shock=0.0, inflation_shock=0.0,
-                    assets=100000, annual_payment=5000, years=20, name="Custom scenario"):
+                    assets=100000, annual_payment=5000, years=20, name="Custom scenario",
+                    matching_years=MATCHING_YEARS):
     """
     One "what if" scenario, ready for the app or the LLM (plain Python types).
     Shocks are decimals: -0.30 = fall 30%, 0.02 = +2 percentage points.
@@ -103,7 +104,7 @@ def custom_scenario(equity_shock=0.0, rate_shock=0.0, inflation_shock=0.0,
         if not low <= value <= high:
             raise ValueError(f"{label}={value} is outside the allowed range [{low}, {high}]")
 
-    res = analyze(assets, annual_payment, years)
+    res = analyze(assets, annual_payment, years, matching_years)
     s = apply_shock(res, name, equity_shock, rate_shock, inflation_shock)
     base_value = float(res["allocation"]["dollars"].sum())
     base_fr = float(res["metrics"]["funding_ratio"])
