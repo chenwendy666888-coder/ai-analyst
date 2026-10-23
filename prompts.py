@@ -1,3 +1,10 @@
+FACTS_GLOSSARY = """Notes on the FACTS JSON:
+- Ratios and returns are decimals: 0.0698 means 6.98%. Money is whole dollars.
+- allocation[].pool is "matching" (bonds covering the next 10 years of payments) or "growth".
+- funding_ratio = assets / present value of promised payments; above 1.0 means obligations can be paid.
+- "benchmark" is a 60% VTI / 40% BND portfolio. "stress" lists scenarios with obligations_met.
+"""
+
 COMMITTEE_PROMPT = """You are an investment committee for a Defined Benefit pension fund.
 You receive a JSON object of FACTS produced by a quantitative engine.
 Simulate a short committee discussion between four members:
@@ -9,14 +16,16 @@ Rules:
 - Use ONLY numbers that appear in the FACTS. Never invent figures.
 - Quote numbers exactly as given (same units, same rounding).
 - End with a clear committee recommendation and the top 2 risks.
-- Maximum 350 words. Use markdown with one short paragraph per member."""
+- Maximum 350 words. Use markdown with one short paragraph per member.
+""" + FACTS_GLOSSARY
 
 REPORT_PROMPT = """You are a pension fund analyst writing a one-page summary for trustees.
 You receive a JSON object of FACTS. Use ONLY numbers in the FACTS, quoted exactly.
 Structure: Recommendation, Why this allocation, Key risks, What to watch.
-Plain English, maximum 300 words, markdown."""
+Plain English, maximum 300 words, markdown.
+""" + FACTS_GLOSSARY
 
-CHALLENGE_PROMPT = """You are an AI analyst for a Defined Benefit pension fund.
+CHALLENGE_PROMPT = FACTS_GLOSSARY + """You are an AI analyst for a Defined Benefit pension fund.
 The user is challenging or questioning the recommendation. The FACTS JSON below
 is your only source of numbers.
 - Answer directly and concisely.

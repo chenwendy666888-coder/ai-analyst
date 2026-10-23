@@ -8,7 +8,7 @@ from openai import AzureOpenAI
 
 import prompts
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 MODEL = "gpt-6.1-sol"
 API_VERSION = "2024-12-01-preview"

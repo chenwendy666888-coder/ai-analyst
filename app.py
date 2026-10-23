@@ -1,14 +1,16 @@
+import os
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 import llm
-from fake_facts import FAKE_FACTS  # Step 4: swap for engine.build_facts
-
-st.set_page_config(page_title="Pension AI Analyst", page_icon="📊", layout="wide")
 
 DISCLAIMER = "Educational hackathon project. Not financial advice."
+USE_FAKE = os.getenv("USE_FAKE_FACTS") == "1"  # set to 1 to fall back to fake_facts.py
+
+st.set_page_config(page_title="Pension AI Analyst", page_icon="📊", layout="wide")
 
 
 def footer():
@@ -16,24 +18,31 @@ def footer():
     st.caption(DISCLAIMER)
 
 
-def get_facts(assets, annual_payment, years) -> dict:
-    # Step 4: return engine.build_facts(assets, annual_payment, years)
-    return FAKE_FACTS
+@st.cache_data(show_spinner=False)
+def get_facts(assets: int, annual_payment: int, years: int) -> dict:
+    if USE_FAKE:
+        from fake_facts import FAKE_FACTS
+        return FAKE_FACTS
+    from engine import build_facts
+    return build_facts(assets=assets, annual_payment=annual_payment, years=years)
 
 
 # ---------- Sidebar ----------
 with st.sidebar:
     st.header("Fund inputs")
-    assets = st.number_input("Assets ($)", min_value=1_000_000, max_value=100_000_000_000,
-                             value=500_000_000, step=10_000_000)
-    annual_payment = st.number_input("Annual payment ($)", min_value=10_000, max_value=10_000_000_000,
-                                     value=25_000_000, step=1_000_000)
+    assets = st.number_input("Assets ($)", min_value=10_000, max_value=100_000_000,
+                             value=100_000, step=10_000)
+    annual_payment = st.number_input("Annual payment ($)", min_value=100, max_value=10_000_000,
+                                     value=5_000, step=500)
     years = st.number_input("Years", min_value=1, max_value=60, value=20, step=1)
     run = st.button("Run analysis", type="primary", use_container_width=True)
 
 if run:
-    st.session_state["facts"] = get_facts(assets, annual_payment, years)
-    st.session_state["chat"] = []
+    try:
+        st.session_state["facts"] = get_facts(int(assets), int(annual_payment), int(years))
+        st.session_state["chat"] = []
+    except Exception as e:
+        st.sidebar.error(f"Engine failed: {e}")
 
 st.title("📊 AI Analyst for a Defined Benefit Pension Fund")
 
@@ -50,14 +59,19 @@ if facts is None:
 # ---------- Tab 1: Recommendation ----------
 with tab1:
     alloc = pd.DataFrame(facts["allocation"])
-    show = alloc.assign(weight_pct=(alloc["weight"] * 100).round(1))[["pool", "ticker", "name", "weight_pct"]]
-    show.columns = ["Pool", "Ticker", "Name", "Weight (%)"]
+    show = pd.DataFrame({
+        "Pool": alloc["pool"].str.capitalize(),
+        "Ticker": alloc["ticker"],
+        "Weight (%)": (alloc["weight"] * 100).round(1),
+        "Dollars ($)": alloc["dollars"].map("{:,.0f}".format),
+    })
     st.subheader("Recommended allocation")
     st.dataframe(show, hide_index=True, use_container_width=True)
 
     c1, c2 = st.columns(2)
     with c1:
         by_pool = alloc.groupby("pool", as_index=False)["weight"].sum()
+        by_pool["pool"] = by_pool["pool"].str.capitalize()
         st.plotly_chart(px.pie(by_pool, names="pool", values="weight", title="By pool", hole=0.4),
                         use_container_width=True)
     with c2:
@@ -65,7 +79,7 @@ with tab1:
                         use_container_width=True)
 
     m, b = facts["metrics"], facts["benchmark"]
-    st.subheader("Portfolio vs benchmark")
+    st.subheader("Portfolio vs 60/40 benchmark")
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Expected return", f"{m['expected_return']:.1%}",
               f"{(m['expected_return'] - b['expected_return']) * 100:+.1f} pp vs benchmark")
@@ -75,6 +89,13 @@ with tab1:
               f"{(m['max_drawdown'] - b['max_drawdown']) * 100:+.1f} pp vs benchmark")
     k4.metric("Funding ratio", f"{m['funding_ratio']:.2f}",
               f"{m['funding_ratio'] - b['funding_ratio']:+.2f} vs benchmark")
+
+    a = facts.get("assumptions")
+    if a:
+        st.caption(
+            f"Assumptions: discount rate {a['discount_rate']:.1%}, inflation {a['inflation']:.1%}, "
+            f"risk-free {a['risk_free']:.1%}, data to {a['data_end_date']}."
+        )
     footer()
 
 # ---------- Tab 2: Committee ----------
@@ -90,9 +111,13 @@ with tab2:
 # ---------- Tab 3: Stress test ----------
 with tab3:
     st.subheader("Stress scenarios")
-    st_df = pd.DataFrame(facts["stress_tests"])
-    table = st_df.rename(columns={"scenario": "Scenario", "funding_ratio": "Funding ratio",
-                                  "obligations_met": "Obligations met"})
+    st_df = pd.DataFrame(facts["stress"])
+    table = pd.DataFrame({
+        "Scenario": st_df["scenario"],
+        "Portfolio value ($)": st_df["portfolio_value"].map("{:,.0f}".format),
+        "Funding ratio": st_df["funding_ratio"].round(2),
+        "Obligations met": st_df["obligations_met"].map({True: "✅ Yes", False: "❌ No"}),
+    })
     st.dataframe(table, hide_index=True, use_container_width=True)
 
     fig = go.Figure(go.Bar(

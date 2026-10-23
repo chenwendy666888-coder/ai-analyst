@@ -1,0 +1,13 @@
+**Chief Investment Officer:** The allocation combines matching bonds with diversified growth assets. Expected return is 0.0698 versus the benchmark’s 0.0974, while Sharpe is 0.3425 versus 0.4953. We are accepting lower expected returns for lower reported risk, but that trade-off does not resolve the funding shortfall. I would not increase growth exposure simply to chase the benchmark. All return, volatility, drawdown, and funding figures here are quoted as decimals.
+
+**Risk Officer:** Portfolio volatility is 0.0863 versus 0.1155 for the benchmark, and reported maximum drawdown is -0.1835 versus -0.227. Those are meaningful improvements, but every supplied stress scenario has `obligations_met: false`. Under “Equity crash -30%,” portfolio value falls to 86676 and the funding ratio to 0.6132. Even “Interest rates +2 points” leaves the funding ratio at 0.9702. Lower volatility is not the same as payment security.
+
+**Actuary:** Assets of 100000 support annual payments of 5000 over 50 years. The funding ratio of 0.7074 indicates assets are below the present value of promised payments; the benchmark has the same funding ratio. Matching bonds help address nearer-term payments, but do not establish long-term solvency. We should review contribution requirements and the sensitivity of funding to the discount_rate of 0.0495 and inflation assumption of 0.025.
+
+**Trustee:** Members need dependable payments, not merely a smoother investment journey. In “Inflation +3 points for 3 years,” portfolio value rises to 101545, yet the funding ratio falls to 0.6625 and obligations are not met. That illustrates why asset growth alone cannot demonstrate benefit security.
+
+**Committee recommendation:** Retain the matching/growth framework provisionally, but require a funding-recovery plan, payment-coverage review, and further liability-sensitive stress testing before endorsing it as sufficient.
+
+**Top risks:**
+- **Persistent underfunding:** Current assets do not fully cover promised obligations.
+- **Stress-driven deterioration:** Market losses and inflation can weaken funding despite diversification.

@@ -1,0 +1,11 @@
+The recommendation prioritizes near-term pension payments over maximizing returns: the matching pool holds bonds to cover upcoming payments, while the growth pool spreads risk across equities, real estate, and gold.
+
+But your criticism is fair. Compared with the benchmark, the proposed portfolio has:
+- Lower expected return: **0.0698** versus **0.0974**.
+- Lower volatility: **0.0863** versus **0.1155**.
+- A less severe maximum drawdown: **-0.1835** versus **-0.227**.
+- A lower Sharpe ratio: **0.3425** versus **0.4953**.
+
+The key concern is that the funding ratio is **0.7074**, and obligations are not met in any listed stress scenario. So the defensive allocation reduces investment risk, but **does not solve the funding shortfall**.
+
+More equity deserves consideration for long-term growth, but it would increase exposure to losses while payments continue. The facts do not include alternative equity allocations, so I cannot establish how much more equity would improve funding—or whether that added risk would be acceptable.

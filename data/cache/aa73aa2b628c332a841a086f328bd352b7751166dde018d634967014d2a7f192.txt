@@ -1,0 +1,13 @@
+**Chief Investment Officer:** The proposed portfolio’s expected return is 0.0988 versus the benchmark’s 0.0974—a modest advantage. Growth assets span equities, property and gold, with GLD carrying a weight of 0.2028. I question whether the additional complexity and risk justify the expected return improvement.
+
+**Risk Officer:** Portfolio volatility is 0.1311 versus 0.1155 for the benchmark; maximum drawdown is -0.265 versus -0.227. Its Sharpe ratio is also lower: 0.4467 versus 0.4953. All supplied stress scenarios show obligations met, but these results do not establish resilience to every possible shock.
+
+**Actuary:** Assets of 500000 support an annual payment of 5000 over 50 years. The funding ratio is 3.5372, indicating assets exceed the modeled present value of promised payments. Under “Equity crash -30%,” the funding ratio remains 2.7823. This is reassuring, but funding adequacy depends on assumptions, including the discount rate of 0.0495 and inflation of 0.025.
+
+**Trustee:** Members need dependable pension payments, not simply the highest projected return. The matching bond pool supports that objective, and the supplied stress results are encouraging. However, the proposed portfolio exposes members’ funding cushion to deeper losses than the benchmark without a compelling expected return advantage.
+
+**Committee recommendation:** Do not approve the allocation unchanged. Retain the matching-pool objective and request a lower-risk growth allocation, using the benchmark as a comparator, with updated funding and stress validation before approval.
+
+**Top risks:**
+- **Market losses:** Higher volatility and deeper drawdown than the benchmark could erode the funding cushion.
+- **Assumption risk:** Different inflation, discount-rate or payment outcomes could weaken modeled funding adequacy.

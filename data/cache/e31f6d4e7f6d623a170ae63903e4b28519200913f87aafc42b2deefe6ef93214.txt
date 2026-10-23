@@ -1,0 +1,13 @@
+**Chief Investment Officer:** The allocation combines TIP, IEF, SHY and BND for payment matching with diversified growth assets. Expected return is 0.0698 versus the benchmark’s 0.0974, and Sharpe is 0.3425 versus 0.4953. We are accepting lower expected returns and lower risk-adjusted performance in exchange for lower modeled portfolio risk.
+
+**Risk Officer:** Volatility is 0.0863 versus 0.1155 for the benchmark; maximum drawdown is -0.1835 versus -0.227. All supplied stress scenarios report obligations_met as true. The “Equity crash -30%” scenario leaves portfolio_value at 86676 and funding_ratio at 1.1283—the lowest funding ratio among the supplied stresses. These results support resilience within the tested scenarios, not protection against every possible shock.
+
+**Actuary:** Assets of 100000 support an annual_payment of 5000 over 20 years. The funding_ratio of 1.3018 indicates assets exceed the modeled present value of promised payments. That assessment depends on assumptions, including discount_rate of 0.0495 and inflation of 0.025. We should review payment timing and liability sensitivity before treating the modeled surplus as durable.
+
+**Trustee:** Members need dependable pension payments, not simply the highest investment return. The matching pool supports that objective, while growth assets seek to sustain the fund over time. However, “obligations met” in a model is not a guarantee. Members should understand that market losses and changing assumptions can reduce the funding cushion.
+
+**Committee recommendation:** Approve the proposed allocation subject to validating the matching assets against the payment schedule and regularly reviewing funding and stress results. The modeled reduction in risk supports prioritizing payment security over the benchmark’s higher expected return.
+
+**Top risks:**
+- **Market losses:** Equity and broader market shocks could erode the funding cushion beyond the supplied scenarios.
+- **Liability and assumption risk:** Inflation, discount-rate changes, or mismatched payment timing could weaken the fund’s ability to meet obligations.
